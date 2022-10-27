@@ -35,19 +35,17 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"net/http"
+	"net/url"
 	"time"
+	"io"
 
 	"github.com/magiconair/properties"
 	"github.com/pingcap/go-ycsb/pkg/prop"
 	"github.com/pingcap/go-ycsb/pkg/ycsb"
 )
 
-const (
-	simulateDelay         = "aadb.simulatedelay"
-	simulateDelayDefault  = int64(0)
-	randomizeDelay        = "aadb.randomizedelay"
-	randomizeDelayDefault = true
-)
+const ()
 
 type contextKey string
 
@@ -61,11 +59,8 @@ type aaState struct {
 
 // AaDB just prints out the requested operations, instead of doing them against a database
 type aaDB struct {
-	verbose        bool
-	randomizeDelay bool
-	toDelay        int64
+	verbose bool
 }
-
 
 func (db *aaDB) InitThread(ctx context.Context, _ int, _ int) context.Context {
 	state := new(aaState)
@@ -83,29 +78,30 @@ func (db *aaDB) Close() error {
 	return nil
 }
 
+func createValue(values map[string][]byte) string {
+	fullValue := ""
+	for k, v := range values {
+		fullValue = fullValue + k + ":" + string(v[:])
+	}
+	return fullValue
+}
+
 func (db *aaDB) Read(ctx context.Context, table string, key string, fields []string) (map[string][]byte, error) {
-	state := ctx.Value(stateKey).(*aaState)
-
-
-	if !db.verbose {
-		return nil, nil
+	fullKey := table + "-" + key
+	data := url.Values{
+		"action": {"Get"},
+		"key":    {fullKey},
 	}
 
-	buf := state.buf
-	s := fmt.Sprintf("READ %s %s [ ", table, key)
-	buf.WriteString(s)
+	resp, err := http.PostForm("http://127.0.0.1:5000", data)
+	if err != nil {
+		panic("PostForm Error")
+	} else{
 
-	if len(fields) > 0 {
-		for _, f := range fields {
-			buf.WriteString(f)
-			buf.WriteByte(' ')
-		}
-	} else {
-		buf.WriteString("<all fields> ")
+		defer resp.Body.Close()
+		io.ReadAll(resp.Body)
+		// fmt.Println(body)
 	}
-	buf.WriteByte(']')
-	fmt.Println(buf.String())
-	buf.Reset()
 	return nil, nil
 }
 
@@ -118,12 +114,9 @@ func (db *aaDB) Scan(ctx context.Context, table string, startKey string, count i
 }
 
 func (db *aaDB) Update(ctx context.Context, table string, key string, values map[string][]byte) error {
-    fullKey := table + "-" + key
-    fullValue := ""
-    for k, v := range values {
-        fullValue = fullValue + k + ":" + string(v[:])
-    }
-    insertRecord(fullKey, fullValue)
+	fullKey := table + "-" + key
+	fullValue := createValue(values)
+	insertRecord(fullKey, fullValue)
 	return nil
 }
 
@@ -131,16 +124,11 @@ func (db *aaDB) BatchUpdate(ctx context.Context, table string, keys []string, va
 	panic("The aaDB has not implemented the batch operation")
 }
 
-
-
 func (db *aaDB) Insert(ctx context.Context, table string, key string, values map[string][]byte) error {
 
-    fullKey := table + "-" + key
-    fullValue := ""
-    for k, v := range values {
-        fullValue = fullValue + k + ":" + string(v[:])
-    }
-    insertRecord(fullKey, fullValue)
+	fullKey := table + "-" + key
+	fullValue := createValue(values)
+	insertRecord(fullKey, fullValue)
 	return nil
 }
 
@@ -149,14 +137,24 @@ func (db *aaDB) BatchInsert(ctx context.Context, table string, keys []string, va
 }
 
 func (db *aaDB) Delete(ctx context.Context, table string, key string) error {
-    fullKey := table + "-" + key
-    insertRecord(fullKey,  "NULL")
+	fullKey := table + "-" + key
+	insertRecord(fullKey, "NULL")
 	return nil
 }
 
 func insertRecord(key string, value string) {
-    fmt.Println(key)
-    fmt.Println(value)
+	// fmt.Println(key)
+	// fmt.Println(value)
+	data := url.Values{
+		"action": {"Put"},
+		"key":    {key},
+		"value":  {value},
+	}
+
+	_, err := http.PostForm("http://127.0.0.1:5000", data)
+	if err != nil {
+		panic("PostForm Error")
+	}
 }
 
 func (db *aaDB) BatchDelete(ctx context.Context, table string, keys []string) error {
@@ -169,8 +167,6 @@ func (aaDBCreator) Create(p *properties.Properties) (ycsb.DB, error) {
 	db := new(aaDB)
 
 	db.verbose = p.GetBool(prop.Verbose, prop.VerboseDefault)
-	db.randomizeDelay = p.GetBool(randomizeDelay, randomizeDelayDefault)
-	db.toDelay = p.GetInt64(simulateDelay, simulateDelayDefault)
 
 	return db, nil
 }
