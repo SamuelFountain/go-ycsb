@@ -66,25 +66,6 @@ type aaDB struct {
 	toDelay        int64
 }
 
-func (db *aaDB) delay(ctx context.Context, state *aaState) {
-	if db.toDelay == 0 {
-		return
-	}
-
-	r := state.r
-	delayTime := time.Duration(db.toDelay) * time.Millisecond
-	if db.randomizeDelay {
-		delayTime = time.Duration(r.Int63n(db.toDelay)) * time.Millisecond
-		if delayTime == 0 {
-			return
-		}
-	}
-
-	select {
-	case <-time.After(delayTime):
-	case <-ctx.Done():
-	}
-}
 
 func (db *aaDB) InitThread(ctx context.Context, _ int, _ int) context.Context {
 	state := new(aaState)
@@ -105,7 +86,6 @@ func (db *aaDB) Close() error {
 func (db *aaDB) Read(ctx context.Context, table string, key string, fields []string) (map[string][]byte, error) {
 	state := ctx.Value(stateKey).(*aaState)
 
-	db.delay(ctx, state)
 
 	if !db.verbose {
 		return nil, nil
@@ -134,55 +114,16 @@ func (db *aaDB) BatchRead(ctx context.Context, table string, keys []string, fiel
 }
 
 func (db *aaDB) Scan(ctx context.Context, table string, startKey string, count int, fields []string) ([]map[string][]byte, error) {
-	state := ctx.Value(stateKey).(*aaState)
-
-	db.delay(ctx, state)
-
-	if !db.verbose {
-		return nil, nil
-	}
-
-	buf := state.buf
-	s := fmt.Sprintf("SCAN %s %s %d [ ", table, startKey, count)
-	buf.WriteString(s)
-
-	if len(fields) > 0 {
-		for _, f := range fields {
-			buf.WriteString(f)
-			buf.WriteByte(' ')
-		}
-	} else {
-		buf.WriteString("<all fields> ")
-	}
-	buf.WriteByte(']')
-	fmt.Println(buf.String())
-	buf.Reset()
-	return nil, nil
+	return nil, fmt.Errorf("scan is not supported")
 }
 
 func (db *aaDB) Update(ctx context.Context, table string, key string, values map[string][]byte) error {
-	state := ctx.Value(stateKey).(*aaState)
-
-	db.delay(ctx, state)
-
-	if !db.verbose {
-		return nil
-	}
-
-	buf := state.buf
-	s := fmt.Sprintf("UPDATE %s %s [ ", table, key)
-	buf.WriteString(s)
-
-	for key, value := range values {
-		buf.WriteString(key)
-		buf.WriteByte('=')
-		buf.Write(value)
-		buf.WriteByte(' ')
-	}
-
-	buf.WriteByte(']')
-	fmt.Println(buf.String())
-	buf.Reset()
+    fullKey := table + "-" + key
+    fullValue := ""
+    for k, v := range values {
+        fullValue = fullValue + k + ":" + string(v[:])
+    }
+    insertRecord(fullKey, fullValue)
 	return nil
 }
 
@@ -190,64 +131,32 @@ func (db *aaDB) BatchUpdate(ctx context.Context, table string, keys []string, va
 	panic("The aaDB has not implemented the batch operation")
 }
 
+
+
 func (db *aaDB) Insert(ctx context.Context, table string, key string, values map[string][]byte) error {
-	state := ctx.Value(stateKey).(*aaState)
 
-	db.delay(ctx, state)
-
-	if !db.verbose {
-		return nil
-	}
-
-	buf := state.buf
-	insertRecord(buf, table, key, values)
+    fullKey := table + "-" + key
+    fullValue := ""
+    for k, v := range values {
+        fullValue = fullValue + k + ":" + string(v[:])
+    }
+    insertRecord(fullKey, fullValue)
 	return nil
 }
 
 func (db *aaDB) BatchInsert(ctx context.Context, table string, keys []string, values []map[string][]byte) error {
-	state := ctx.Value(stateKey).(*aaState)
-
-	db.delay(ctx, state)
-
-	if !db.verbose {
-		return nil
-	}
-	buf := state.buf
-	for i, key := range keys {
-		insertRecord(buf, table, key, values[i])
-	}
-	return nil
-}
-
-func insertRecord(buf *bytes.Buffer, table string, key string, values map[string][]byte) {
-	s := fmt.Sprintf("INSERT %s %s [ ", table, key)
-	buf.WriteString(s)
-	for valueKey, value := range values {
-		buf.WriteString(valueKey)
-		buf.WriteByte('=')
-		buf.Write(value)
-		buf.WriteByte(' ')
-	}
-	buf.WriteByte(']')
-	fmt.Println(buf.String())
-	buf.Reset()
+	panic("The aaDB has not implemented the batch operation")
 }
 
 func (db *aaDB) Delete(ctx context.Context, table string, key string) error {
-	state := ctx.Value(stateKey).(*aaState)
-
-	db.delay(ctx, state)
-	if !db.verbose {
-		return nil
-	}
-
-	buf := state.buf
-	s := fmt.Sprintf("DELETE %s %s", table, key)
-	buf.WriteString(s)
-
-	fmt.Println(buf.String())
-	buf.Reset()
+    fullKey := table + "-" + key
+    insertRecord(fullKey,  "NULL")
 	return nil
+}
+
+func insertRecord(key string, value string) {
+    fmt.Println(key)
+    fmt.Println(value)
 }
 
 func (db *aaDB) BatchDelete(ctx context.Context, table string, keys []string) error {

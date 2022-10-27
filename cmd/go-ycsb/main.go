@@ -40,6 +40,8 @@ import (
 
 	// Register basic database
 	_ "github.com/pingcap/go-ycsb/db/basic"
+	// Register aa database
+	_ "github.com/pingcap/go-ycsb/db/aa"
 	// Register MySQL database
 	_ "github.com/pingcap/go-ycsb/db/mysql"
 	// Register TiKV database
