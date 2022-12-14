@@ -28,13 +28,15 @@
  * LICENSE file.
  */
 
-package aa
+package aashard
 
 import (
 	"bytes"
 	"context"
 	"fmt"
+	"hash/fnv"
 	"io"
+	"math"
 	"math/rand"
 	"net/http"
 	"net/url"
@@ -49,47 +51,49 @@ const ()
 
 type contextKey string
 
-const stateKey = contextKey("aaDB")
+const stateKey = contextKey("aashardDB")
 
-type aaState struct {
+type aashardState struct {
 	r *rand.Rand
 
 	buf *bytes.Buffer
 }
 
-// AaDB just prints out the requested operations, instead of doing them against a database
-type aaDB struct {
+// AashardDB just prints out the requested operations, instead of doing them against a database
+type aashardDB struct {
 	verbose bool
 }
 
-func (db *aaDB) InitThread(ctx context.Context, _ int, _ int) context.Context {
-	state := new(aaState)
+func (db *aashardDB) InitThread(ctx context.Context, _ int, _ int) context.Context {
+	state := new(aashardState)
 	state.r = rand.New(rand.NewSource(time.Now().UnixNano()))
 	state.buf = new(bytes.Buffer)
 
 	return context.WithValue(ctx, stateKey, state)
 }
 
-func (db *aaDB) CleanupThread(_ context.Context) {
+func (db *aashardDB) CleanupThread(_ context.Context) {
 
 }
 
-func (db *aaDB) Close() error {
+func (db *aashardDB) Close() error {
 	return nil
 }
 
-func getServer() string {
-	in := []string{"159.89.237.48",
-		"159.89.237.44",
-		"159.89.227.93",
-		"159.89.229.188",
-		"159.89.237.16",
-		"159.89.228.217",
-		"159.89.229.136",
-		"159.89.225.110",
-		"159.89.237.38"}
-	randomIndex := rand.Intn(len(in))
-	pick := in[randomIndex]
+func hash(s string) uint32 {
+	h := fnv.New32a()
+	h.Write([]byte(s))
+	return uint32(math.Mod(float64(h.Sum32()), 3))
+}
+
+func getServer(key string) string {
+	in := [][]string{
+		{"167.99.10.224", "146.190.76.226", "146.190.76.211"},
+		{"167.99.6.137", "192.241.131.207", "146.190.76.223"},
+		{"167.99.8.234", "159.203.185.93", "146.190.76.178"}}
+	outIndex := hash(key)
+	randomIndex := rand.Intn(len(in[outIndex]))
+	pick := in[outIndex][randomIndex]
 	return pick
 }
 
@@ -101,14 +105,14 @@ func createValue(values map[string][]byte) string {
 	return fullValue
 }
 
-func (db *aaDB) Read(ctx context.Context, table string, key string, fields []string) (map[string][]byte, error) {
+func (db *aashardDB) Read(ctx context.Context, table string, key string, fields []string) (map[string][]byte, error) {
 	fullKey := table + "-" + key
 	data := url.Values{
 		"action": {"Get"},
 		"key":    {fullKey},
 	}
 
-	resp, err := http.PostForm("http://"+getServer()+":5000", data)
+	resp, err := http.PostForm("http://"+getServer(fullKey)+":5000", data)
 
 	if err != nil {
 		panic("PostForm Error Read")
@@ -120,26 +124,26 @@ func (db *aaDB) Read(ctx context.Context, table string, key string, fields []str
 	return nil, nil
 }
 
-func (db *aaDB) BatchRead(ctx context.Context, table string, keys []string, fields []string) ([]map[string][]byte, error) {
-	panic("The aaDB has not implemented the batch operation")
+func (db *aashardDB) BatchRead(ctx context.Context, table string, keys []string, fields []string) ([]map[string][]byte, error) {
+	panic("The aashardDB has not implemented the batch operation")
 }
 
-func (db *aaDB) Scan(ctx context.Context, table string, startKey string, count int, fields []string) ([]map[string][]byte, error) {
+func (db *aashardDB) Scan(ctx context.Context, table string, startKey string, count int, fields []string) ([]map[string][]byte, error) {
 	return nil, fmt.Errorf("scan is not supported")
 }
 
-func (db *aaDB) Update(ctx context.Context, table string, key string, values map[string][]byte) error {
+func (db *aashardDB) Update(ctx context.Context, table string, key string, values map[string][]byte) error {
 	fullKey := table + "-" + key
 	fullValue := createValue(values)
 	insertRecord(fullKey, fullValue)
 	return nil
 }
 
-func (db *aaDB) BatchUpdate(ctx context.Context, table string, keys []string, values []map[string][]byte) error {
-	panic("The aaDB has not implemented the batch operation")
+func (db *aashardDB) BatchUpdate(ctx context.Context, table string, keys []string, values []map[string][]byte) error {
+	panic("The aashardDB has not implemented the batch operation")
 }
 
-func (db *aaDB) Insert(ctx context.Context, table string, key string, values map[string][]byte) error {
+func (db *aashardDB) Insert(ctx context.Context, table string, key string, values map[string][]byte) error {
 
 	fullKey := table + "-" + key
 	fullValue := createValue(values)
@@ -147,11 +151,11 @@ func (db *aaDB) Insert(ctx context.Context, table string, key string, values map
 	return nil
 }
 
-func (db *aaDB) BatchInsert(ctx context.Context, table string, keys []string, values []map[string][]byte) error {
-	panic("The aaDB has not implemented the batch operation")
+func (db *aashardDB) BatchInsert(ctx context.Context, table string, keys []string, values []map[string][]byte) error {
+	panic("The aashardDB has not implemented the batch operation")
 }
 
-func (db *aaDB) Delete(ctx context.Context, table string, key string) error {
+func (db *aashardDB) Delete(ctx context.Context, table string, key string) error {
 	fullKey := table + "-" + key
 	insertRecord(fullKey, "NULL")
 	return nil
@@ -166,7 +170,7 @@ func insertRecord(key string, value string) {
 		"value":  {value},
 	}
 
-	resp, err := http.PostForm("http://"+getServer()+":5000", data)
+	resp, err := http.PostForm("http://"+getServer(key)+":5000", data)
 	if err != nil {
 		panic(err)
 		panic("PostForm Error insert")
@@ -177,14 +181,14 @@ func insertRecord(key string, value string) {
 	}
 }
 
-func (db *aaDB) BatchDelete(ctx context.Context, table string, keys []string) error {
-	panic("The aaDB has not implemented the batch operation")
+func (db *aashardDB) BatchDelete(ctx context.Context, table string, keys []string) error {
+	panic("The aashardDB has not implemented the batch operation")
 }
 
-type aaDBCreator struct{}
+type aashardDBCreator struct{}
 
-func (aaDBCreator) Create(p *properties.Properties) (ycsb.DB, error) {
-	db := new(aaDB)
+func (aashardDBCreator) Create(p *properties.Properties) (ycsb.DB, error) {
+	db := new(aashardDB)
 
 	db.verbose = p.GetBool(prop.Verbose, prop.VerboseDefault)
 
@@ -192,5 +196,5 @@ func (aaDBCreator) Create(p *properties.Properties) (ycsb.DB, error) {
 }
 
 func init() {
-	ycsb.RegisterDBCreator("aa", aaDBCreator{})
+	ycsb.RegisterDBCreator("aashard", aashardDBCreator{})
 }
